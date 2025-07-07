@@ -7,7 +7,7 @@ interface WorkerAnalysisResult {
   keywords: string[];
 }
 
-class AiWorkerClientServiceImpl {
+export class AiWorkerClientServiceImpl {
   private worker: Worker | null = null;
   private messageId = 0;
   private pendingRequests = new Map<
@@ -130,8 +130,18 @@ class AiWorkerClientServiceImpl {
     });
 }
 
-export const AiWorkerClientService =
-  Context.GenericTag<AiWorkerClientServiceImpl>("AiWorkerClientService");
-export const AiWorkerClientServiceLive = AiWorkerClientService.of(
-  new AiWorkerClientServiceImpl(),
-);
+export class AiWorkerClientService extends Context.Tag("AiWorkerClientService")<
+  AiWorkerClientService,
+  {
+    analyzeNote: (note: Note) => Effect.Effect<WorkerAnalysisResult, Error>;
+    generateSummary: (content: string) => Effect.Effect<string, Error>;
+    extractKeywords: (content: string) => Effect.Effect<string[], Error>;
+    analyzeSentiment: (
+      content: string,
+    ) => Effect.Effect<"positive" | "neutral" | "negative", Error>;
+    terminate: () => Effect.Effect<void, never>;
+  }
+>() {}
+
+export type AiWorkerClientServiceType =
+  Context.Tag.Service<AiWorkerClientService>;

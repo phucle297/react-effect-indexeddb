@@ -7,10 +7,16 @@ interface CloudAnalysisResult {
   keywords: string[];
 }
 
-class CloudAiServiceImpl {
+export class CloudAiServiceImpl {
   private apiKey = import.meta.env.VITE_OPENAI_API_KEY;
   private apiUrl = "https://api.openai.com/v1/chat/completions";
 
+  constructor() {
+    this.analyzeNote = this.analyzeNote.bind(this);
+    this.generateSummary = this.generateSummary.bind(this);
+    this.extractKeywords = this.extractKeywords.bind(this);
+    this.analyzeSentiment = this.analyzeSentiment.bind(this);
+  }
   private makeRequest = (messages: any[]): Effect.Effect<any, Error> =>
     Effect.tryPromise({
       try: async () => {
@@ -138,6 +144,16 @@ Please respond with valid JSON in this format:
     });
 }
 
-export const CloudAiService =
-  Context.GenericTag<CloudAiServiceImpl>("CloudAiService");
-export const CloudAiServiceLive = CloudAiService.of(new CloudAiServiceImpl());
+export class CloudAiService extends Context.Tag("CloudAiService")<
+  CloudAiService,
+  {
+    analyzeNote: (note: Note) => Effect.Effect<CloudAnalysisResult, Error>;
+    generateSummary: (content: string) => Effect.Effect<string, Error>;
+    extractKeywords: (content: string) => Effect.Effect<string[], Error>;
+    analyzeSentiment: (
+      content: string,
+    ) => Effect.Effect<"positive" | "neutral" | "negative", Error>;
+  }
+>() {}
+
+export type CloudAiServiceType = Context.Tag.Service<CloudAiService>;

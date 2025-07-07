@@ -1,10 +1,9 @@
 import { Context, Effect } from "effect";
 import { stringUtils } from "../utils/string-utils";
 
-class EmbeddingServiceImpl {
+export class EmbeddingServiceImpl {
   // Simple TF-IDF based embedding for demonstration
   // In production, you'd use a proper embedding model
-
   generateEmbedding = (text: string): Effect.Effect<number[], Error> =>
     Effect.sync(() => {
       try {
@@ -200,6 +199,16 @@ class EmbeddingServiceImpl {
       "like",
       "happy",
       "joy",
+      "excited",
+      "pleased",
+      "satisfied",
+      "positive",
+      "optimistic",
+      "appreciate",
+      "grateful",
+      "thankful",
+      "admire",
+      "enjoy",
     ];
     const negativeWords = [
       "bad",
@@ -211,6 +220,14 @@ class EmbeddingServiceImpl {
       "angry",
       "frustrated",
       "disappointed",
+      "upset",
+      "negative",
+      "pessimistic",
+      "annoyed",
+      "irritated",
+      "regret",
+      "dissatisfied",
+      "unhappy",
     ];
 
     let score = 0;
@@ -243,8 +260,11 @@ class EmbeddingServiceImpl {
   }
 }
 
-export const EmbeddingService =
-  Context.GenericTag<EmbeddingServiceImpl>("EmbeddingService");
-export const EmbeddingServiceLive = EmbeddingService.of(
-  new EmbeddingServiceImpl(),
-);
+export class EmbeddingService extends Context.Tag("EmbeddingService")<
+  EmbeddingService,
+  {
+    generateEmbedding: (text: string) => Effect.Effect<number[], Error>;
+    cosineSimilarity: (a: number[], b: number[]) => number;
+  }
+>() {}
+export type EmbeddingServiceType = Context.Tag.Service<EmbeddingService>;

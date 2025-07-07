@@ -1,18 +1,33 @@
-import { Effect } from "effect";
+import { Context, Effect, Fiber, pipe } from "effect";
 import { PlusCircle } from "lucide-react";
 import { useEffect, useState } from "react";
 import { InsightPanel } from "./components/insight-panel.ui";
 import { LoadingSpinner } from "./components/loading-spinner.ui";
 import { NoteEditor } from "./components/note-editor.ui";
 import { NoteList } from "./components/note-list.ui";
-import { AiAnalyzerService } from "./services/ai-analyzer.service";
+import {
+  AiAnalyzerService,
+  AiAnalyzerServiceImpl,
+} from "./services/ai-analyzer.service";
 import {
   NoteRepoService,
   NoteRepoServiceImpl,
 } from "./services/note-repo.service";
 import type { Note, NoteMetadata } from "./types";
+import {
+  AiWorkerClientService,
+  AiWorkerClientServiceImpl,
+} from "./services/ai-worker-client.service";
+import {
+  CloudAiService,
+  CloudAiServiceImpl,
+} from "./services/cloud-ai.service";
+import {
+  EmbeddingService,
+  EmbeddingServiceImpl,
+} from "./services/embedding.service";
 
-export const App: React.FC = () => {
+export const App = () => {
   const [notes, setNotes] = useState<Note[]>([]);
   const [selectedNote, setSelectedNote] = useState<Note | null>(null);
   const [noteMetadata, setNoteMetadata] = useState<
@@ -53,7 +68,9 @@ export const App: React.FC = () => {
       } catch (error) {
         console.error("Failed to load notes:", error);
       } finally {
-        setIsLoading(false);
+        setTimeout(() => {
+          setIsLoading(false);
+        }, 500);
       }
     };
 
@@ -81,7 +98,17 @@ export const App: React.FC = () => {
 
         // Start AI analysis in background
         const analysisFiber = yield* Effect.fork(analyzer.analyze(note));
-        const analysis = yield* Effect.fiberAwait(analysisFiber);
+        const analysis = yield* pipe(
+          analysisFiber,
+          Fiber.join,
+          Effect.map((result) => ({
+            noteId: note.id,
+            summary: result.summary,
+            keywords: result.keywords,
+            sentiment: result.sentiment,
+            createdAt: Date.now(),
+          })),
+        );
 
         // Save analysis results
         yield* noteRepo.saveMetadata(analysis);
@@ -92,8 +119,20 @@ export const App: React.FC = () => {
       const runnable = program.pipe(
         Effect.provideService(NoteRepoService, new NoteRepoServiceImpl()),
         Effect.provideService(AiAnalyzerService, new AiAnalyzerServiceImpl()),
+        Effect.provideService(
+          AiWorkerClientService,
+          new AiWorkerClientServiceImpl(),
+        ),
+        Effect.provideService(CloudAiService, new CloudAiServiceImpl()),
+        Effect.provideService(EmbeddingService, new EmbeddingServiceImpl()),
       );
-      const analysis = await Effect.runPromise(program);
+      // const context = Context.empty().pipe(
+      //   Context.add(NoteRepoService, new NoteRepoServiceImpl()),
+      //   Context.add(AiAnalyzerService, new AiAnalyzerServiceImpl()),
+      // );
+      //
+      // const runnable = Effect.provide(program, context);
+      const analysis = await Effect.runPromise(runnable);
       setNoteMetadata((prev) => ({
         ...prev,
         [note.id]: analysis,
@@ -101,7 +140,9 @@ export const App: React.FC = () => {
     } catch (error) {
       console.error("Failed to save note:", error);
     } finally {
-      setIsLoading(false);
+      setTimeout(() => {
+        setIsLoading(false);
+      }, 500);
     }
   };
 
@@ -120,28 +161,32 @@ export const App: React.FC = () => {
     setSelectedNote(note);
   };
 
-  // const handleDeleteNote = async (noteId: string) => {
-  //   try {
-  //     const program = Effect.gen(function* () {
-  //       const noteRepo = yield* NoteRepoService;
-  //       yield* noteRepo.deleteNote(noteId);
-  //       yield* noteRepo.deleteMetadata(noteId);
-  //     });
-  //
-  //     await Effect.runPromise(program);
-  //     setNotes((prev) => prev.filter((n) => n.id !== noteId));
-  //     setNoteMetadata((prev) => {
-  //       const { [noteId]: _, ...rest } = prev;
-  //       return rest;
-  //     });
-  //
-  //     if (selectedNote?.id === noteId) {
-  //       setSelectedNote(null);
-  //     }
-  //   } catch (error) {
-  //     console.error("Failed to delete note:", error);
-  //   }
-  // };
+  const handleDeleteNote = async (noteId: string) => {
+    try {
+      const program = Effect.gen(function* () {
+        const noteRepo = yield* NoteRepoService;
+        yield* noteRepo.deleteNote(noteId);
+        yield* noteRepo.deleteMetadata(noteId);
+      });
+
+      const runnable = program.pipe(
+        Effect.provideService(NoteRepoService, new NoteRepoServiceImpl()),
+      );
+
+      await Effect.runPromise(runnable);
+      setNotes((prev) => prev.filter((n) => n.id !== noteId));
+      setNoteMetadata((prev) => {
+        const { [noteId]: _, ...rest } = prev;
+        return rest;
+      });
+
+      if (selectedNote?.id === noteId) {
+        setSelectedNote(null);
+      }
+    } catch (error) {
+      console.error("Failed to delete note:", error);
+    }
+  };
 
   return (
     // <EffectContextProvider>
@@ -172,8 +217,7 @@ export const App: React.FC = () => {
               notes={notes}
               selectedNote={selectedNote}
               onSelectNote={handleSelectNote}
-              // onDeleteNote={handleDeleteNote}
-              onDeleteNote={() => {}}
+              onDeleteNote={handleDeleteNote}
               noteMetadata={noteMetadata}
             />
           </div>
@@ -210,7 +254,7 @@ export const App: React.FC = () => {
       </main>
 
       {isLoading && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-md bg-opacity-50 flex items-center justify-center z-50">
           <LoadingSpinner />
         </div>
       )}

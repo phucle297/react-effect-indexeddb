@@ -1,5 +1,5 @@
-import { Note, NoteMetadata } from "../types";
-import { Trash2, FileText, Hash, Heart, Meh, Frown } from "lucide-react";
+import { FileText, Frown, Hash, Heart, Meh, Trash2 } from "lucide-react";
+import type { Note, NoteMetadata } from "../types";
 
 interface NoteListProps {
   notes: Note[];
@@ -9,13 +9,13 @@ interface NoteListProps {
   noteMetadata: Record<string, NoteMetadata>;
 }
 
-export const NoteList: React.FC<NoteListProps> = ({
+export const NoteList = ({
   notes,
   selectedNote,
   onSelectNote,
   onDeleteNote,
   noteMetadata,
-}) => {
+}: NoteListProps) => {
   const getSentimentIcon = (sentiment?: string) => {
     switch (sentiment) {
       case "positive":
@@ -29,7 +29,7 @@ export const NoteList: React.FC<NoteListProps> = ({
 
   const truncateText = (text: string, maxLength: number) => {
     return text.length > maxLength
-      ? text.substring(0, maxLength) + "..."
+      ? `${text.substring(0, maxLength)}...`
       : text;
   };
 
@@ -55,9 +55,10 @@ export const NoteList: React.FC<NoteListProps> = ({
 
             return (
               <div
+                role="none"
                 key={note.id}
-                className={`p-4 cursor-pointer hover:bg-gray-50 transition-colors ${
-                  isSelected ? "bg-blue-50 border-r-4 border-blue-500" : ""
+                className={`p-4 cursor-pointer hover:bg-gray-50 transition-colors w-full ${
+                  isSelected ? "bg-blue-50 border-l-4 border-blue-500" : ""
                 }`}
                 onClick={() => onSelectNote(note)}
               >
@@ -107,13 +108,14 @@ export const NoteList: React.FC<NoteListProps> = ({
                   </div>
 
                   <button
+                    type="button"
                     onClick={(e) => {
                       e.stopPropagation();
                       onDeleteNote(note.id);
                     }}
                     className="ml-2 p-1 text-gray-400 hover:text-red-500 transition-colors"
                   >
-                    <Trash2 className="w-4 h-4" />
+                    <Trash2 className="cursor-pointer w-4 h-4" />
                   </button>
                 </div>
               </div>
