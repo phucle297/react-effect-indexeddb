@@ -73,7 +73,15 @@ export class NoteRepoServiceImpl {
     Effect.tryPromise({
       try: async () => {
         const db = await this.getDb();
-        await db.delete("notes", id);
+        const tx = db.transaction(["notes", "metadata"], "readwrite");
+        const notesStore = tx.objectStore("notes");
+        const metadataStore = tx.objectStore("metadata");
+        // get note to delete metadata
+        const note = await notesStore.get(id);
+        if (!note) throw new Error(`Note with id ${id} not found`);
+        await notesStore.delete(id);
+        await metadataStore.delete(id);
+        await tx.done;
       },
       catch: (error) => new Error(`Failed to delete note: ${error}`),
     });
