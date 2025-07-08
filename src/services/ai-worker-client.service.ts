@@ -1,5 +1,6 @@
 import { Context, Effect } from "effect";
 import type { Note } from "../types";
+import AiWorker from "../workers/ai.worker?worker";
 
 interface WorkerAnalysisResult {
   summary: string;
@@ -7,7 +8,22 @@ interface WorkerAnalysisResult {
   keywords: string[];
 }
 
-export class AiWorkerClientServiceImpl {
+export class AiWorkerClientService extends Context.Tag("AiWorkerClientService")<
+  AiWorkerClientService,
+  {
+    analyzeNote: (note: Note) => Effect.Effect<WorkerAnalysisResult, Error>;
+    generateSummary: (content: string) => Effect.Effect<string, Error>;
+    extractKeywords: (content: string) => Effect.Effect<string[], Error>;
+    analyzeSentiment: (
+      content: string,
+    ) => Effect.Effect<"positive" | "neutral" | "negative", Error>;
+    terminate: () => Effect.Effect<void, never>;
+  }
+>() {}
+
+type AiWorkerClientServiceType = Context.Tag.Service<AiWorkerClientService>;
+
+export class AiWorkerClientServiceImpl implements AiWorkerClientServiceType {
   private worker: Worker | null = null;
   private messageId = 0;
   private pendingRequests = new Map<
@@ -20,13 +36,7 @@ export class AiWorkerClientServiceImpl {
 
   private async getWorker(): Promise<Worker> {
     if (!this.worker) {
-      this.worker = new Worker(
-        new URL("../workers/ai.worker.ts", import.meta.url),
-        {
-          type: "module",
-        },
-      );
-
+      this.worker = new AiWorker();
       this.worker.onmessage = (event) => {
         const { messageId, result, error } = event.data;
         const pending = this.pendingRequests.get(messageId);
@@ -55,6 +65,7 @@ export class AiWorkerClientServiceImpl {
   }
 
   private postMessage<T>(message: any): Promise<T> {
+    // biome-ignore lint/suspicious/noAsyncPromiseExecutor: We need to use async/await for worker communication
     return new Promise(async (resolve, reject) => {
       const worker = await this.getWorker();
       const messageId = ++this.messageId;
@@ -129,19 +140,3 @@ export class AiWorkerClientServiceImpl {
       this.pendingRequests.clear();
     });
 }
-
-export class AiWorkerClientService extends Context.Tag("AiWorkerClientService")<
-  AiWorkerClientService,
-  {
-    analyzeNote: (note: Note) => Effect.Effect<WorkerAnalysisResult, Error>;
-    generateSummary: (content: string) => Effect.Effect<string, Error>;
-    extractKeywords: (content: string) => Effect.Effect<string[], Error>;
-    analyzeSentiment: (
-      content: string,
-    ) => Effect.Effect<"positive" | "neutral" | "negative", Error>;
-    terminate: () => Effect.Effect<void, never>;
-  }
->() {}
-
-export type AiWorkerClientServiceType =
-  Context.Tag.Service<AiWorkerClientService>;

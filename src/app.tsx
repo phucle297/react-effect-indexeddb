@@ -1,19 +1,16 @@
-import { Context, Effect, Fiber, pipe } from "effect";
+import { Effect, Fiber, pipe } from "effect";
 import { PlusCircle } from "lucide-react";
 import { useEffect, useState } from "react";
+import { v4 as uuidv4 } from "uuid";
 import { InsightPanel } from "./components/insight-panel.ui";
 import { LoadingSpinner } from "./components/loading-spinner.ui";
 import { NoteEditor } from "./components/note-editor.ui";
 import { NoteList } from "./components/note-list.ui";
 import {
+  type AiAnalyzerRequirements,
   AiAnalyzerService,
   AiAnalyzerServiceImpl,
 } from "./services/ai-analyzer.service";
-import {
-  NoteRepoService,
-  NoteRepoServiceImpl,
-} from "./services/note-repo.service";
-import type { Note, NoteMetadata } from "./types";
 import {
   AiWorkerClientService,
   AiWorkerClientServiceImpl,
@@ -21,11 +18,18 @@ import {
 import {
   CloudAiService,
   CloudAiServiceImpl,
+  FallbackAiServiceImpl,
 } from "./services/cloud-ai.service";
 import {
   EmbeddingService,
   EmbeddingServiceImpl,
 } from "./services/embedding.service";
+import {
+  NoteRepoService,
+  NoteRepoServiceImpl,
+} from "./services/note-repo.service";
+import type { Note, NoteMetadata } from "./types";
+import { toast } from "sonner";
 
 export const App = () => {
   const [notes, setNotes] = useState<Note[]>([]);
@@ -35,7 +39,6 @@ export const App = () => {
   >({});
   const [isLoading, setIsLoading] = useState(false);
 
-  // Load notes on mount
   useEffect(() => {
     const loadNotes = async () => {
       setIsLoading(true);
@@ -66,6 +69,7 @@ export const App = () => {
           ),
         );
       } catch (error) {
+        toast.error("Failed to load notes. Please try again later.");
         console.error("Failed to load notes:", error);
       } finally {
         setTimeout(() => {
@@ -79,21 +83,24 @@ export const App = () => {
 
   const handleSaveNote = async (note: Note) => {
     setIsLoading(true);
+    let program: Effect.Effect<
+      NoteMetadata,
+      Error,
+      NoteRepoService | AiAnalyzerService | AiAnalyzerRequirements
+    > | null = null;
     try {
-      const program = Effect.gen(function* () {
+      program = Effect.gen(function* () {
         const noteRepo = yield* NoteRepoService;
         const analyzer = yield* AiAnalyzerService;
 
-        // Save note
         yield* noteRepo.saveNote(note);
 
-        // Update local state
         setNotes((prev) => {
           const existing = prev.find((n) => n.id === note.id);
           if (existing) {
             return prev.map((n) => (n.id === note.id ? note : n));
           }
-          return [...prev, note];
+          return [note, ...prev];
         });
 
         // Start AI analysis in background
@@ -106,6 +113,7 @@ export const App = () => {
             summary: result.summary,
             keywords: result.keywords,
             sentiment: result.sentiment,
+            embedding: result.embedding,
             createdAt: Date.now(),
           })),
         );
@@ -119,12 +127,12 @@ export const App = () => {
       const runnable = program.pipe(
         Effect.provideService(NoteRepoService, new NoteRepoServiceImpl()),
         Effect.provideService(AiAnalyzerService, new AiAnalyzerServiceImpl()),
+        Effect.provideService(CloudAiService, new CloudAiServiceImpl()),
+        Effect.provideService(EmbeddingService, new EmbeddingServiceImpl()),
         Effect.provideService(
           AiWorkerClientService,
           new AiWorkerClientServiceImpl(),
         ),
-        Effect.provideService(CloudAiService, new CloudAiServiceImpl()),
-        Effect.provideService(EmbeddingService, new EmbeddingServiceImpl()),
       );
       // const context = Context.empty().pipe(
       //   Context.add(NoteRepoService, new NoteRepoServiceImpl()),
@@ -133,12 +141,38 @@ export const App = () => {
       //
       // const runnable = Effect.provide(program, context);
       const analysis = await Effect.runPromise(runnable);
+
       setNoteMetadata((prev) => ({
         ...prev,
         [note.id]: analysis,
       }));
+      toast.success("Note saved and analyzed successfully!");
     } catch (error) {
-      console.error("Failed to save note:", error);
+      console.error("Failed to  note:", error);
+      // Call the local if init the ai failed
+      if (program) {
+        toast.error(
+          "Failed to analyze note with Cloud AI. Retrying with local AI...",
+        );
+        console.log("Retry with local AI analysis...");
+        const runnable = program.pipe(
+          Effect.provideService(NoteRepoService, new NoteRepoServiceImpl()),
+          Effect.provideService(AiAnalyzerService, new AiAnalyzerServiceImpl()),
+          Effect.provideService(CloudAiService, new FallbackAiServiceImpl()),
+          Effect.provideService(EmbeddingService, new EmbeddingServiceImpl()),
+          Effect.provideService(
+            AiWorkerClientService,
+            new AiWorkerClientServiceImpl(),
+          ),
+        );
+        const analysis = await Effect.runPromise(runnable);
+
+        setNoteMetadata((prev) => ({
+          ...prev,
+          [note.id]: analysis,
+        }));
+        toast.success("Note saved and analyzed successfully by Local AI!");
+      }
     } finally {
       setTimeout(() => {
         setIsLoading(false);
@@ -148,12 +182,11 @@ export const App = () => {
 
   const handleCreateNote = () => {
     const newNote: Note = {
-      id: crypto.randomUUID(),
+      id: uuidv4(),
       title: "New Note",
       content: "",
       createdAt: Date.now(),
     };
-    console.log("🚀 src/app.tsx:110 -> newNote: ", newNote);
     setSelectedNote(newNote);
   };
 
@@ -166,7 +199,6 @@ export const App = () => {
       const program = Effect.gen(function* () {
         const noteRepo = yield* NoteRepoService;
         yield* noteRepo.deleteNote(noteId);
-        yield* noteRepo.deleteMetadata(noteId);
       });
 
       const runnable = program.pipe(
@@ -183,13 +215,14 @@ export const App = () => {
       if (selectedNote?.id === noteId) {
         setSelectedNote(null);
       }
+      toast.success("Note deleted successfully!");
     } catch (error) {
       console.error("Failed to delete note:", error);
+      toast.error("Failed to delete note. Please try again later.");
     }
   };
 
   return (
-    // <EffectContextProvider>
     <div className="min-h-screen bg-gray-50">
       <header className="bg-white shadow-sm border-b">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -243,6 +276,7 @@ export const App = () => {
           <div className="lg:col-span-1">
             {selectedNote && (
               <InsightPanel
+                key={selectedNote.id}
                 note={selectedNote}
                 metadata={noteMetadata[selectedNote.id]}
                 notes={notes}

@@ -1,7 +1,16 @@
 import { Context, Effect } from "effect";
-import { stringUtils } from "../utils/string-utils";
+import { stringUtils } from "../utils/string.lib";
 
-export class EmbeddingServiceImpl {
+export class EmbeddingService extends Context.Tag("EmbeddingService")<
+  EmbeddingService,
+  {
+    generateEmbedding: (text: string) => Effect.Effect<number[], Error>;
+    cosineSimilarity: (a: number[], b: number[]) => number;
+  }
+>() {}
+type EmbeddingServiceType = Context.Tag.Service<EmbeddingService>;
+
+export class EmbeddingServiceImpl implements EmbeddingServiceType {
   // Simple TF-IDF based embedding for demonstration
   // In production, you'd use a proper embedding model
   generateEmbedding = (text: string): Effect.Effect<number[], Error> =>
@@ -259,12 +268,3 @@ export class EmbeddingServiceImpl {
     return Math.min(exclamationMarks / 10, 1);
   }
 }
-
-export class EmbeddingService extends Context.Tag("EmbeddingService")<
-  EmbeddingService,
-  {
-    generateEmbedding: (text: string) => Effect.Effect<number[], Error>;
-    cosineSimilarity: (a: number[], b: number[]) => number;
-  }
->() {}
-export type EmbeddingServiceType = Context.Tag.Service<EmbeddingService>;

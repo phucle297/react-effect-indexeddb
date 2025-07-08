@@ -1,4 +1,7 @@
+import Anthropic from "@anthropic-ai/sdk";
+import type { MessageParam } from "@anthropic-ai/sdk/resources";
 import { Context, Effect } from "effect";
+import { parseResponseJson } from "@/utils/parse-response-json.lib";
 import type { Note } from "../types";
 
 interface CloudAnalysisResult {
@@ -6,46 +9,55 @@ interface CloudAnalysisResult {
   sentiment: "positive" | "neutral" | "negative";
   keywords: string[];
 }
+export class CloudAiService extends Context.Tag("CloudAiService")<
+  CloudAiService,
+  {
+    analyzeNote: (note: Note) => Effect.Effect<CloudAnalysisResult, Error>;
+    generateSummary: (content: string) => Effect.Effect<string, Error>;
+    extractKeywords: (content: string) => Effect.Effect<string[], Error>;
+    analyzeSentiment: (
+      content: string,
+    ) => Effect.Effect<"positive" | "neutral" | "negative", Error>;
+  }
+>() {}
 
-export class CloudAiServiceImpl {
-  private apiKey = import.meta.env.VITE_OPENAI_API_KEY;
-  private apiUrl = "https://api.openai.com/v1/chat/completions";
+type CloudAiServiceType = Context.Tag.Service<CloudAiService>;
+
+export class CloudAiServiceImpl implements CloudAiServiceType {
+  private readonly apiKey = import.meta.env.VITE_API_KEY;
+  private readonly anthropic: Anthropic;
 
   constructor() {
+    this.anthropic = new Anthropic({
+      apiKey: this.apiKey || "",
+      dangerouslyAllowBrowser: true,
+    });
     this.analyzeNote = this.analyzeNote.bind(this);
     this.generateSummary = this.generateSummary.bind(this);
     this.extractKeywords = this.extractKeywords.bind(this);
     this.analyzeSentiment = this.analyzeSentiment.bind(this);
   }
-  private makeRequest = (messages: any[]): Effect.Effect<any, Error> =>
+  private makeRequest = (
+    messages: MessageParam[],
+  ): Effect.Effect<Anthropic.Messages.Message, Error> =>
     Effect.tryPromise({
       try: async () => {
-        const response = await fetch(this.apiUrl, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${this.apiKey}`,
-          },
-          body: JSON.stringify({
-            model: "gpt-3.5-turbo",
-            messages,
-            max_tokens: 500,
-            temperature: 0.3,
-          }),
+        const msg = await this.anthropic.messages.create({
+          model: "claude-sonnet-4-20250514",
+          max_tokens: 1024,
+          messages,
         });
 
-        if (!response.ok) {
-          throw new Error(`API request failed: ${response.status}`);
+        if (!msg || !msg.content) {
+          throw new Error("No response from Cloud AI");
         }
-
-        const data = await response.json();
-        return data.choices[0].message.content;
+        return msg;
       },
       catch: (error) => new Error(`Cloud AI request failed: ${error}`),
     });
 
   analyzeNote = (note: Note): Effect.Effect<CloudAnalysisResult, Error> =>
-    Effect.gen(function* () {
+    Effect.gen(this, function* () {
       if (!this.apiKey) {
         yield* Effect.fail(new Error("OpenAI API key not configured"));
       }
@@ -65,18 +77,24 @@ Please respond with valid JSON in this format:
   "keywords": ["keyword1", "keyword2", ...]
 }`;
 
-      const responseText = yield* this.makeRequest([
-        { role: "user", content: prompt },
-      ]);
+      const msg = yield* this.makeRequest([{ role: "user", content: prompt }]);
+      let responseText = "";
+      if (msg.content.length > 1) {
+        responseText =
+          (msg.content.at(-1) as unknown as { content: string })?.content || "";
+      } else {
+        responseText =
+          (msg.content.at(-1) as unknown as { text: string })?.text || "";
+      }
 
       try {
-        const result = JSON.parse(responseText);
+        const result = parseResponseJson<CloudAnalysisResult>(responseText);
         return {
           summary: result.summary || "No summary available",
           sentiment: result.sentiment || "neutral",
           keywords: result.keywords || [],
         };
-      } catch (parseError) {
+      } catch (_) {
         // Fallback if JSON parsing fails
         return {
           summary: "Unable to generate summary",
@@ -86,23 +104,31 @@ Please respond with valid JSON in this format:
       }
     });
 
-  generateSummary = (content: string): Effect.Effect<string, Error> =>
-    Effect.gen(function* () {
+  generateSummary = (content: string) =>
+    Effect.gen(this, function* () {
       if (!this.apiKey) {
         yield* Effect.fail(new Error("OpenAI API key not configured"));
       }
 
       const prompt = `Please provide a concise summary of the following text (max 100 words):\n\n${content}`;
 
-      const summary = yield* this.makeRequest([
-        { role: "user", content: prompt },
-      ]);
+      const msg = yield* this.makeRequest([{ role: "user", content: prompt }]);
+
+      let summary = "";
+
+      if (msg.content.length > 1) {
+        summary =
+          (msg.content.at(-1) as unknown as { content: string })?.content || "";
+      } else {
+        summary =
+          (msg.content.at(-1) as unknown as { text: string })?.text || "";
+      }
 
       return summary;
     });
 
   extractKeywords = (content: string): Effect.Effect<string[], Error> =>
-    Effect.gen(function* () {
+    Effect.gen(this, function* () {
       if (!this.apiKey) {
         yield* Effect.fail(new Error("OpenAI API key not configured"));
       }
@@ -113,8 +139,18 @@ Please respond with valid JSON in this format:
         { role: "user", content: prompt },
       ]);
 
+      let responseText = "";
+      if (response.content.length > 1) {
+        responseText =
+          (response.content.at(-1) as unknown as { content: string })
+            ?.content || "";
+      } else {
+        responseText =
+          (response.content.at(-1) as unknown as { text: string })?.text || "";
+      }
+
       try {
-        const keywords = JSON.parse(response);
+        const keywords = parseResponseJson(responseText);
         return Array.isArray(keywords) ? keywords : [];
       } catch {
         return [];
@@ -124,7 +160,7 @@ Please respond with valid JSON in this format:
   analyzeSentiment = (
     content: string,
   ): Effect.Effect<"positive" | "neutral" | "negative", Error> =>
-    Effect.gen(function* () {
+    Effect.gen(this, function* () {
       if (!this.apiKey) {
         yield* Effect.fail(new Error("OpenAI API key not configured"));
       }
@@ -134,9 +170,22 @@ Please respond with valid JSON in this format:
       const response = yield* this.makeRequest([
         { role: "user", content: prompt },
       ]);
+      let sentiment = "";
 
-      const sentiment = response.trim().toLowerCase();
-      if (["positive", "neutral", "negative"].includes(sentiment)) {
+      if (response.content.length > 1) {
+        sentiment =
+          (response.content.at(-1) as unknown as { content: string })
+            ?.content || "";
+      } else {
+        sentiment =
+          (response.content.at(-1) as unknown as { text: string })?.text || "";
+      }
+
+      if (
+        ["positive", "neutral", "negative"].includes(
+          sentiment.toLocaleLowerCase(),
+        )
+      ) {
         return sentiment as "positive" | "neutral" | "negative";
       }
 
@@ -144,16 +193,18 @@ Please respond with valid JSON in this format:
     });
 }
 
-export class CloudAiService extends Context.Tag("CloudAiService")<
-  CloudAiService,
-  {
-    analyzeNote: (note: Note) => Effect.Effect<CloudAnalysisResult, Error>;
-    generateSummary: (content: string) => Effect.Effect<string, Error>;
-    extractKeywords: (content: string) => Effect.Effect<string[], Error>;
-    analyzeSentiment: (
-      content: string,
-    ) => Effect.Effect<"positive" | "neutral" | "negative", Error>;
-  }
->() {}
+export class FallbackAiServiceImpl implements CloudAiServiceType {
+  analyzeNote = (_note: Note): Effect.Effect<CloudAnalysisResult, Error> =>
+    Effect.fail(new Error("Cloud AI service is not available"));
 
-export type CloudAiServiceType = Context.Tag.Service<CloudAiService>;
+  generateSummary = (_content: string): Effect.Effect<string, Error> =>
+    Effect.fail(new Error("Cloud AI service is not available"));
+
+  extractKeywords = (_content: string): Effect.Effect<string[], Error> =>
+    Effect.fail(new Error("Cloud AI service is not available"));
+
+  analyzeSentiment = (
+    _content: string,
+  ): Effect.Effect<"positive" | "neutral" | "negative", Error> =>
+    Effect.fail(new Error("Cloud AI service is not available"));
+}

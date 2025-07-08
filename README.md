@@ -31,6 +31,8 @@ A frontend app built with **React**, **Effect TS**, **IndexedDB**, **Web Workers
 
 ```
 src/
+├── server/                 # Express backend
+│   └── index.ts
 ├── components/
 │ ├── note-editor.ui.tsx
 │ ├── note-list.ui.tsx
@@ -47,11 +49,7 @@ src/
 ├── workers/
 │ └── ai.worker.ts # Text analysis in Web Worker
 │
-├── contexts/
-│ └── effect-context.ts # DI for services via Effect.Context
-│
 ├── utils/
-│ ├── fiber-utils.ts # Helpers to run/cancel fibers
 │ └── string-utils.ts # Tokenizer, normalization, etc.
 │
 ├── app.tsx # Entry point
@@ -139,14 +137,6 @@ interface NoteMetadata {
 }
 ```
 
-## ✨ Fiber Example
-
-```typescript
-const fiber = pipe(AiAnalyzerService.analyze(note), Effect.fork);
-
-const result = await fiber.await();
-```
-
 ## ⚙️ AI Worker Design
 
 ```typescript
@@ -163,7 +153,7 @@ self.onmessage = async (e) => {
 ## 🔐 API Integration (Optional)
 
 ```
-VITE_OPENAI_API_KEY=sk-...
+VITE_API_KEY=sk-...
 ```
 
 ## 🧭 Future Ideas

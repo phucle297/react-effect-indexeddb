@@ -1,4 +1,4 @@
-import { stringUtils } from "../utils/string-utils";
+import { stringUtils } from "../utils/string.lib";
 
 interface WorkerMessage {
   messageId: number;
@@ -15,6 +15,7 @@ interface WorkerResponse {
 }
 
 // Simple local AI implementations
+// biome-ignore lint/complexity/noStaticOnlyClass: This is a worker script
 class LocalAI {
   static summarize(content: string): string {
     const sentences = content
@@ -143,7 +144,7 @@ class LocalAI {
       "what",
       "all",
       "were",
-      "we",
+     "we",
       "when",
       "your",
       "can",
@@ -193,19 +194,19 @@ class LocalAI {
     const fullText = `${title} ${content}`;
 
     return {
-      summary: this.summarize(content),
-      sentiment: this.analyzeSentiment(fullText),
-      keywords: this.extractKeywords(fullText),
+      summary: LocalAI.summarize(content),
+      sentiment: LocalAI.analyzeSentiment(fullText),
+      keywords: LocalAI.extractKeywords(fullText),
     };
   }
 }
 
 // Worker message handler
 self.onmessage = (event: MessageEvent<WorkerMessage>) => {
-  const { messageId, task, content, title, noteId } = event.data;
+  const { messageId, task, content, title } = event.data;
 
   try {
-    let result: any;
+    let result: string | object | string[];
 
     switch (task) {
       case "analyze":

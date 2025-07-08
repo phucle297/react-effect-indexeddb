@@ -10,7 +10,24 @@ interface NoteDatabase {
   metadata: NoteMetadata;
 }
 
-export class NoteRepoServiceImpl {
+export class NoteRepoService extends Context.Tag("NoteRepoService")<
+  NoteRepoService,
+  {
+    getAllNotes: () => Effect.Effect<Note[], Error>;
+    getNote: (id: string) => Effect.Effect<Note | null, Error>;
+    saveNote: (note: Note) => Effect.Effect<Note, Error>;
+    deleteNote: (id: string) => Effect.Effect<void, Error>;
+    saveMetadata: (
+      metadata: NoteMetadata,
+    ) => Effect.Effect<NoteMetadata, Error>;
+    getMetadata: (noteId: string) => Effect.Effect<NoteMetadata | null, Error>;
+    getAllMetadata: () => Effect.Effect<NoteMetadata[], Error>;
+    deleteMetadata: (noteId: string) => Effect.Effect<void, Error>;
+  }
+>() {}
+
+type NoteRepoServiceType = Context.Tag.Service<NoteRepoService>;
+export class NoteRepoServiceImpl implements NoteRepoServiceType {
   private db: IDBPDatabase<NoteDatabase> | null = null;
 
   private getDb = async (): Promise<IDBPDatabase<NoteDatabase>> => {
@@ -39,10 +56,7 @@ export class NoteRepoServiceImpl {
   saveNote = (note: Note) =>
     Effect.tryPromise({
       try: async () => {
-        console.log("🚀 src/services/note-repo.service.ts:39 -> note: ", note);
-
         const db = await this.getDb();
-        console.log("🚀 src/services/note-repo.service.ts:44 -> db: ", db);
         await db.put("notes", note);
         return note;
       },
@@ -124,19 +138,3 @@ export class NoteRepoServiceImpl {
       catch: (error) => new Error(`Failed to delete metadata: ${error}`),
     });
 }
-
-export class NoteRepoService extends Context.Tag("NoteRepoService")<
-  NoteRepoService,
-  {
-    getAllNotes: () => Effect.Effect<Note[], Error>;
-    getNote: (id: string) => Effect.Effect<Note | null, Error>;
-    saveNote: (note: Note) => Effect.Effect<Note, Error>;
-    deleteNote: (id: string) => Effect.Effect<void, Error>;
-    saveMetadata: (
-      metadata: NoteMetadata,
-    ) => Effect.Effect<NoteMetadata, Error>;
-    getMetadata: (noteId: string) => Effect.Effect<NoteMetadata | null, Error>;
-    getAllMetadata: () => Effect.Effect<NoteMetadata[], Error>;
-    deleteMetadata: (noteId: string) => Effect.Effect<void, Error>;
-  }
->() {}

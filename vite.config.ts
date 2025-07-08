@@ -13,6 +13,16 @@ export default defineConfig({
       "@": path.resolve(__dirname, "./src"), // Alias '@' to the 'src' directory
     },
   },
+  server: {
+    host: true,
+    proxy: {
+      "/api": {
+        target: process.env.VITE_API_BASE_URL || "http://localhost:3000",
+        changeOrigin: true,
+        secure: false,
+      },
+    },
+  },
 
   build: {
     target: "es2020",
